@@ -3,20 +3,18 @@ package fyi.meld.gaitlab;
 import com.orm.SugarRecord;
 
 public class SensorReading extends SugarRecord {
+    int experiment;
     String sensor;
     String timestamp;
     float x;
     float y;
     float z;
-
-    Experiment experiment;
-
     // Default constructor is necessary for SugarRecord
     public SensorReading() {
 
     }
 
-    public SensorReading(String sensor, String timestamp, float x, float y, float z, Experiment experiment) {
+    public SensorReading(int experiment, String sensor, String timestamp, float x, float y, float z) {
         this.sensor = sensor;
         this.timestamp = timestamp;
         this.x = x;

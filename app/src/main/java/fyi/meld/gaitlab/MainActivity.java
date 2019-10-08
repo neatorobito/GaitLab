@@ -3,6 +3,7 @@ package fyi.meld.gaitlab;
 import androidx.appcompat.app.AppCompatActivity;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -11,6 +12,7 @@ import android.hardware.TriggerEvent;
 import android.hardware.TriggerEventListener;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -35,11 +37,13 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private Sensor mStationary;
     private TriggerEventListener mStationaryEventListener;
     private ArrayList<SensorReading> mReadings;
-    private Experiment mCurrentExperiment;
+    private int mCurrentExperiment;
     private NumberPicker mSessionDurationPicker;
     private Button sessionActionBtn;
     private Timer sessionTimer;
     private long startSessionTime;
+    private SimpleDateFormat timestampFormat;
+    private SharedPreferences sharedPref;
 
     private final String LOGGING_ID = "GaitLab";
     private boolean isRecording = false;
@@ -59,9 +63,23 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         sessionActionBtn = findViewById(R.id.sessionActionBtn);
         sessionActionBtn.setOnClickListener(this);
 
-        SugarContext.init(this);
+
+        timestampFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSSS");
+
+        sharedPref = this.getPreferences(Context.MODE_PRIVATE);
+
+        if(sharedPref.contains("experimentID"))
+        {
+            mCurrentExperiment = sharedPref.getInt("experimentID", -1);
+        }
+        else
+        {
+            mCurrentExperiment = 0;
+        }
+
 
         initSensors();
+        SugarContext.init(this);
     }
 
     @Override
@@ -100,6 +118,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     {
         isRecording = true;
         mReadings = new ArrayList<SensorReading>();
+        int duration = mSessionDurationPicker.getValue();
+        SharedPreferences.Editor editor = sharedPref.edit();
+        mCurrentExperiment++;
+        editor.putInt("experimentID", mCurrentExperiment);
+        editor.commit();
 
         if(mStationaryEventListener == null)
         {
@@ -111,10 +134,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             };
         }
 
-        mCurrentExperiment = new Experiment();
-        mCurrentExperiment.duration = mSessionDurationPicker.getValue();
-        mCurrentExperiment.save();
-
         sessionTimer = new Timer();
         startSessionTime = System.currentTimeMillis();
         sessionTimer.schedule(new TimerTask() {
@@ -125,11 +144,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                     endSession();
                 }
             }
-        }, mCurrentExperiment.duration * 60 * 1000);
+        }, duration * 60 * 1000);
 
-        sensorManager.registerListener(this, mAccel, SensorManager.SENSOR_DELAY_GAME );
-        sensorManager.registerListener(this, mGyro, SensorManager.SENSOR_DELAY_GAME );
-        sensorManager.registerListener(this, mMagnetometer, SensorManager.SENSOR_DELAY_GAME );
+        sensorManager.registerListener(this, mAccel, SensorManager.SENSOR_DELAY_UI);
+        sensorManager.registerListener(this, mGyro, SensorManager.SENSOR_DELAY_UI);
+        sensorManager.registerListener(this, mMagnetometer, SensorManager.SENSOR_DELAY_UI);
         sensorManager.requestTriggerSensor(mStationaryEventListener, mStationary);
 
         runOnUiThread(new Runnable() {
@@ -150,9 +169,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         });
 
         sessionActionBtn.setClickable(false);
-        mCurrentExperiment.end = new SimpleDateFormat("HH:mm:ss.sssZ", Locale.US).format(new Date());
-        mCurrentExperiment.save();
-        mCurrentExperiment = null;
 
         sensorManager.unregisterListener(this, mAccel);
         sensorManager.unregisterListener(this, mGyro);
@@ -187,16 +203,18 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     @Override
     public void onSensorChanged(SensorEvent sensorEvent) {
-        SensorReading reading = new SensorReading(
+
+        String humanReadableTimestamp = timestampFormat.format(new Date(System.currentTimeMillis()));
+
+        SensorReading reading = new SensorReading(  mCurrentExperiment,
                                                     sensorEvent.sensor.getStringType(),
-                                                    String.valueOf(sensorEvent.timestamp),
+                                                    humanReadableTimestamp,
                                                     sensorEvent.values[0],
                                                     sensorEvent.values[1],
-                                                    sensorEvent.values[2],
-                mCurrentExperiment);
+                                                    sensorEvent.values[2]);
         mReadings.add(reading);
 
-        Log.d(LOGGING_ID, reading.sensor + " event captured.");
+        Log.d(LOGGING_ID, reading.sensor + " event captured. " + humanReadableTimestamp);
     }
 
     @Override
@@ -214,8 +232,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             }
             else
             {
+                int duration = mSessionDurationPicker.getValue();
                 long sessionEndTime = System.currentTimeMillis();
-                if(((sessionEndTime - startSessionTime) / 1000f) < (mCurrentExperiment.duration * 60))
+                if(((sessionEndTime - startSessionTime) / 1000f) < (duration * 60))
                 {
                     sessionTimer.cancel();
                 }
